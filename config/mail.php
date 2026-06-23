@@ -10,11 +10,38 @@
  */
 
 define('GMAIL_EMAIL', 'caja360.contacto@gmail.com');
-define('GMAIL_APP_PASSWORD', 'pqdz kfat lkli rcxs'); // la de 16 caracteres, sin espacios o con espacios, da igual
+define('GMAIL_APP_PASSWORD', 'pqdz kfat lkli rcxs');
 
 define('IMAP_HOST', '{imap.gmail.com:993/imap/ssl}');
 define('IMAP_INBOX', IMAP_HOST . 'INBOX');
-define('IMAP_SENT', IMAP_HOST . '[Gmail]/Sent Mail');
+
+// Detectar automáticamente el nombre correcto del buzón de enviados
+function detectarBuzonEnviados(): string
+{
+    $host = '{imap.gmail.com:993/imap/ssl}';
+    $conn = @imap_open($host, GMAIL_EMAIL, GMAIL_APP_PASSWORD, OP_HALFOPEN);
+    if (!$conn) return $host . '[Gmail]/Sent Mail';
+
+    $lista = imap_list($conn, $host, '*');
+    imap_close($conn);
+
+    if (!$lista) return $host . '[Gmail]/Sent Mail';
+
+    $candidatos = ['Sent Mail', 'Correo enviado', 'Sent', 'Enviados'];
+    foreach ($lista as $buzon) {
+        foreach ($candidatos as $nombre) {
+            if (stripos($buzon, $nombre) !== false) {
+                // Extraer solo el nombre del mailbox sin el host
+                $nombre_buzon = str_replace($host, '', $buzon);
+                return $host . $nombre_buzon;
+            }
+        }
+    }
+
+    return $host . '[Gmail]/Sent Mail';
+}
+
+define('IMAP_SENT', detectarBuzonEnviados());
 
 define('SMTP_HOST', 'smtp.gmail.com');
 define('SMTP_PORT', 587);

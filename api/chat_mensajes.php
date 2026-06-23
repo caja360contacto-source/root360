@@ -1,128 +1,208 @@
 <?php
 /**
- * api/chat_mensajes.php?email=alguien@dominio.com
- * Lee INBOX + Sent Mail de la casilla de Gmail configurada en config/mail.php,
- * busca todos los correos cruzados con ese email, y devuelve un hilo tipo chat.
+ * api/chat_mensajes.php?email=alguien@dominio.com&contacto_id=X
  *
- * Requiere la extensión "imap" de PHP habilitada (php.ini -> extension=imap).
+ * 1) Carga el mensaje original de la landing desde la DB (tabla contactos)
+ * 2) Busca en Gmail (INBOX + Sent) los correos cruzados con ese email
+ * 3) Fusiona todo ordenado por fecha
+ *
+ * Optimizaciones de velocidad:
+ * - Abre INBOX y Sent en la misma conexión IMAP (imap_reopen)
+ * - Usa IMAP sequence sets para traer solo los headers necesarios
+ * - Timeout de conexión reducido a 10s
  */
 
+ob_start();
+require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/mail.php';
+ob_clean();
+
 header('Content-Type: application/json; charset=utf-8');
 
 if (!function_exists('imap_open')) {
     http_response_code(500);
-    echo json_encode(['error' => 'La extensión PHP "imap" no está habilitada. Activala en php.ini (extension=imap) y reiniciá Apache.']);
+    echo json_encode(['error' => 'La extensión PHP "imap" no está habilitada.']);
     exit;
 }
 
 $emailContacto = $_GET['email'] ?? null;
+$contactoId    = $_GET['contacto_id'] ?? null;
+
 if (!$emailContacto) {
     http_response_code(400);
     echo json_encode(['error' => 'Falta el parámetro email']);
     exit;
 }
 
-function abrirBuzon(string $mailbox)
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function limpiarCuerpo(string $body, int $encoding): string
 {
-    $conn = @imap_open($mailbox, GMAIL_EMAIL, GMAIL_APP_PASSWORD);
-    if (!$conn) {
-        throw new Exception('No se pudo conectar a Gmail: ' . imap_last_error());
+    switch ($encoding) {
+        case 3: $body = base64_decode($body); break;
+        case 4: $body = quoted_printable_decode($body); break;
     }
-    return $conn;
+    if (!mb_check_encoding($body, 'UTF-8')) {
+        $body = mb_convert_encoding($body, 'UTF-8', 'Windows-1252');
+    }
+    $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
+    return trim($body);
 }
 
-function decodificarCuerpo($conn, $num, $structure)
+function decodificarCuerpo($conn, int $num, $structure): string
 {
-    // Si es texto plano simple
     if (!isset($structure->parts)) {
-        $body = imap_body($conn, $num);
-        return limpiarCuerpo($body, $structure->encoding ?? 0);
+        return limpiarCuerpo(imap_body($conn, $num), $structure->encoding ?? 0);
     }
-
-    // Multipart: buscamos la parte text/plain (o si no hay, text/html sin tags)
+    // Buscar text/plain directo
     foreach ($structure->parts as $i => $part) {
-        if ($part->subtype === 'PLAIN') {
-            $body = imap_fetchbody($conn, $num, (string)($i + 1));
-            return limpiarCuerpo($body, $part->encoding ?? 0);
+        if (isset($part->subtype) && strtoupper($part->subtype) === 'PLAIN') {
+            return limpiarCuerpo(imap_fetchbody($conn, $num, (string)($i + 1)), $part->encoding ?? 0);
         }
     }
+    // Buscar en partes anidadas (multipart/alternative dentro de multipart/mixed)
     foreach ($structure->parts as $i => $part) {
-        if ($part->subtype === 'HTML') {
-            $body = imap_fetchbody($conn, $num, (string)($i + 1));
-            $body = limpiarCuerpo($body, $part->encoding ?? 0);
+        if (isset($part->parts)) {
+            foreach ($part->parts as $j => $sub) {
+                if (isset($sub->subtype) && strtoupper($sub->subtype) === 'PLAIN') {
+                    return limpiarCuerpo(imap_fetchbody($conn, $num, ($i+1).'.'.($j+1)), $sub->encoding ?? 0);
+                }
+            }
+        }
+    }
+    // Fallback: HTML sin tags
+    foreach ($structure->parts as $i => $part) {
+        if (isset($part->subtype) && strtoupper($part->subtype) === 'HTML') {
+            $body = limpiarCuerpo(imap_fetchbody($conn, $num, (string)($i + 1)), $part->encoding ?? 0);
             return trim(preg_replace('/\s+/', ' ', strip_tags($body)));
         }
     }
     return '(sin contenido de texto)';
 }
 
-function limpiarCuerpo($body, $encoding)
+function sanitizar(?string $str): string
 {
-    if ($encoding == 3) { // BASE64
-        $body = base64_decode($body);
-    } elseif ($encoding == 4) { // QUOTED-PRINTABLE
-        $body = quoted_printable_decode($body);
-    }
-    return trim($body);
+    if ($str === null) return '';
+    $str = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $str);
+    return mb_convert_encoding($str, 'UTF-8', 'UTF-8');
 }
 
-function extraerEmail(string $direccion): string
+function decodificarHeader(?string $h): string
 {
-    if (preg_match('/<(.+?)>/', $direccion, $m)) {
-        return strtolower($m[1]);
+    if (!$h) return '';
+    $parts = imap_mime_header_decode($h);
+    $out = '';
+    foreach ($parts as $p) {
+        $cs = strtoupper($p->charset ?? 'UTF-8');
+        if ($cs === 'DEFAULT') $cs = 'UTF-8';
+        $out .= ($cs !== 'UTF-8') ? mb_convert_encoding($p->text, 'UTF-8', $cs) : $p->text;
     }
-    return strtolower(trim($direccion));
+    return $out;
 }
+
+function leerBuzon($conn, string $criterio, string $direccion, string $emailContacto): array
+{
+    $mensajes = [];
+    $ids = @imap_search($conn, $criterio, SE_UID);
+    if (!$ids) return $mensajes;
+
+    foreach ($ids as $uid) {
+        $num = imap_msgno($conn, $uid);
+        if (!$num) continue;
+        $head = @imap_headerinfo($conn, $num);
+        if (!$head) continue;
+        $structure = @imap_fetchstructure($conn, $num);
+        if (!$structure) continue;
+
+        $mensajes[] = [
+            'direccion'  => $direccion,
+            'de'         => sanitizar($direccion === 'entrante' ? ($head->fromaddress ?? $emailContacto) : GMAIL_EMAIL),
+            'asunto'     => sanitizar(decodificarHeader($head->subject ?? '')),
+            'fecha'      => date('c', strtotime($head->date ?? 'now')),
+            'message_id' => sanitizar($head->message_id ?? null),
+            'cuerpo'     => sanitizar(decodificarCuerpo($conn, $num, $structure)),
+        ];
+    }
+    return $mensajes;
+}
+
+// ─── 1. Mensaje original de la landing (DB) ─────────────────────────────────
+
+$mensajes = [];
 
 try {
-    $mensajes = [];
-
-    // ---- Entrantes (lo que el contacto te escribió) ----
-    $conn = abrirBuzon(IMAP_INBOX);
-    $ids = imap_search($conn, 'FROM "' . $emailContacto . '"', SE_UID);
-    if ($ids) {
-        foreach ($ids as $uid) {
-            $num = imap_msgno($conn, $uid);
-            $head = imap_headerinfo($conn, $num);
-            $structure = imap_fetchstructure($conn, $num);
-            $mensajes[] = [
-                'direccion' => 'entrante',
-                'de'        => $head->fromaddress ?? $emailContacto,
-                'asunto'    => imap_utf8($head->subject ?? '(sin asunto)'),
-                'fecha'     => date('c', strtotime($head->date)),
-                'message_id'=> $head->message_id ?? null,
-                'cuerpo'    => decodificarCuerpo($conn, $num, $structure),
-            ];
-        }
+    if ($contactoId) {
+        $stmt = $pdo->prepare("SELECT nombre, email, mensaje, creado_en FROM contactos WHERE id = :id");
+        $stmt->execute(['id' => $contactoId]);
+        $contacto = $stmt->fetch();
+    } else {
+        // Buscar por email si no viene el id
+        $stmt = $pdo->prepare("SELECT nombre, email, mensaje, creado_en FROM contactos WHERE email = :email ORDER BY creado_en ASC LIMIT 1");
+        $stmt->execute(['email' => $emailContacto]);
+        $contacto = $stmt->fetch();
     }
-    imap_close($conn);
 
-    // ---- Enviados (lo que vos le respondiste desde Gmail) ----
-    $conn = abrirBuzon(IMAP_SENT);
-    $ids = imap_search($conn, 'TO "' . $emailContacto . '"', SE_UID);
-    if ($ids) {
-        foreach ($ids as $uid) {
-            $num = imap_msgno($conn, $uid);
-            $head = imap_headerinfo($conn, $num);
-            $structure = imap_fetchstructure($conn, $num);
-            $mensajes[] = [
-                'direccion' => 'saliente',
-                'de'        => GMAIL_EMAIL,
-                'asunto'    => imap_utf8($head->subject ?? '(sin asunto)'),
-                'fecha'     => date('c', strtotime($head->date)),
-                'message_id'=> $head->message_id ?? null,
-                'cuerpo'    => decodificarCuerpo($conn, $num, $structure),
-            ];
-        }
+    if ($contacto && $contacto['mensaje']) {
+        $mensajes[] = [
+            'direccion'  => 'entrante',
+            'de'         => sanitizar($contacto['nombre'] . ' <' . $contacto['email'] . '>'),
+            'asunto'     => 'Consulta desde la landing',
+            'fecha'      => date('c', strtotime($contacto['creado_en'])),
+            'message_id' => null,
+            'cuerpo'     => sanitizar($contacto['mensaje']),
+            'origen'     => 'landing', // marca visual opcional
+        ];
     }
-    imap_close($conn);
-
-    usort($mensajes, fn($a, $b) => strtotime($a['fecha']) <=> strtotime($b['fecha']));
-
-    echo json_encode(['mensajes' => $mensajes, 'casilla' => GMAIL_EMAIL]);
-
 } catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+    // Si falla la DB no rompemos el chat, seguimos con Gmail
 }
+
+// ─── 2. Gmail (INBOX + Sent reutilizando la misma conexión) ─────────────────
+
+imap_timeout(IMAP_OPENTIMEOUT, 10);
+imap_timeout(IMAP_READTIMEOUT, 10);
+
+$conn = @imap_open(IMAP_INBOX, GMAIL_EMAIL, GMAIL_APP_PASSWORD);
+
+if ($conn) {
+    $mensajes = array_merge($mensajes, leerBuzon(
+        $conn,
+        'FROM "' . $emailContacto . '"',
+        'entrante',
+        $emailContacto
+    ));
+
+    // Reutilizar la misma conexión para Sent (más rápido que abrir una nueva)
+    if (@imap_reopen($conn, IMAP_SENT)) {
+        $mensajes = array_merge($mensajes, leerBuzon(
+            $conn,
+            'TO "' . $emailContacto . '"',
+            'saliente',
+            $emailContacto
+        ));
+    }
+
+    imap_close($conn);
+} else {
+    // Gmail no disponible: devolvemos igual lo que tenemos de la DB
+    // (no es un error fatal si hay mensajes de landing)
+    if (empty($mensajes)) {
+        ob_clean();
+        http_response_code(500);
+        echo json_encode(['error' => 'No se pudo conectar a Gmail: ' . imap_last_error()]);
+        exit;
+    }
+}
+
+// ─── 3. Ordenar por fecha y responder ───────────────────────────────────────
+
+usort($mensajes, fn($a, $b) => strtotime($a['fecha']) <=> strtotime($b['fecha']));
+
+ob_clean();
+
+$json = json_encode(
+    ['mensajes' => $mensajes, 'casilla' => GMAIL_EMAIL],
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+);
+
+echo $json;

@@ -9,7 +9,6 @@ async function cargarResumen() {
   document.getElementById('nav-badge-mensajes').textContent = data.mensajes_nuevos;
   document.getElementById('nav-badge-mensajes').style.display = data.mensajes_nuevos > 0 ? 'inline-block' : 'none';
 
-  // Servicios vendidos (instalación completo / básico) + suscripciones
   const basico = data.servicios_instalacion.basico || 0;
   const completo = data.servicios_instalacion.completo || 0;
   const totalInstal = basico + completo || 1;
@@ -33,7 +32,6 @@ function renderProximosCobros(lista) {
     cont.innerHTML = '<div class="empty">No hay cobros de mantenimiento próximos</div>';
     return;
   }
-
   cont.innerHTML = lista.map(c => {
     const dias = c.dias_restantes;
     let claseDias = '';
@@ -42,7 +40,6 @@ function renderProximosCobros(lista) {
     else if (dias === 0) { claseDias = 'urgente'; texto = 'hoy'; }
     else if (dias <= 3) { claseDias = 'urgente'; }
     else if (dias <= 7) { claseDias = 'pronto'; }
-
     return `
       <div class="row">
         <div>
@@ -67,7 +64,8 @@ async function cargarMensajes() {
   }
 
   cont.innerHTML = data.contactos.map(m => `
-    <div class="row row-clickable" style="grid-template-columns:1fr auto;" onclick="abrirChat('${m.id}', '${escapeHtml(m.nombre).replace(/'/g,"\\'")}', '${escapeHtml(m.email)}')">
+    <div class="row row-clickable" style="grid-template-columns:1fr auto;"
+         onclick="abrirChat('${m.id}', '${escapeHtml(m.nombre).replace(/'/g,"\\'")}', '${escapeHtml(m.email)}', '${m.id}')">
       <div>
         <span class="nombre">${escapeHtml(m.nombre)}</span>
         <span class="email">${escapeHtml(m.email)} · ${formatFechaHora(m.creado_en)}</span>
@@ -85,7 +83,8 @@ async function cargarMensajes() {
 
 function renderFilaMensaje(m) {
   return `
-    <div class="row row-clickable" style="grid-template-columns:1fr auto auto;" onclick="abrirChat('${m.id}', '${escapeHtml(m.nombre).replace(/'/g,"\\'")}', '${escapeHtml(m.email)}')">
+    <div class="row row-clickable" style="grid-template-columns:1fr auto auto;"
+         onclick="abrirChat('${m.id}', '${escapeHtml(m.nombre).replace(/'/g,"\\'")}', '${escapeHtml(m.email)}', '${m.id}')">
       <div>
         <span class="nombre">${escapeHtml(m.nombre)}</span>
         <span class="email">${escapeHtml(m.email)} · ${formatFechaHora(m.creado_en)}</span>
@@ -113,7 +112,6 @@ async function cargarMensajesFull() {
     cont.innerHTML = '<div class="empty">No hay mensajes para mostrar</div>';
     return;
   }
-
   cont.innerHTML = data.contactos.map(renderFilaMensaje).join('');
 }
 
@@ -130,12 +128,12 @@ async function actualizarEstadoContacto(select) {
   cargarResumen();
 }
 
-// ---------- Chat integrado con Gmail ----------
+// ─── Chat ────────────────────────────────────────────────────────────────────
 
-let chatActual = { email: null, nombre: null, ultimoMessageId: null };
+let chatActual = { email: null, nombre: null, ultimoMessageId: null, contactoId: null };
 
-async function abrirChat(contactoId, nombre, email) {
-  chatActual = { email, nombre, ultimoMessageId: null };
+async function abrirChat(contactoId, nombre, email, origenId) {
+  chatActual = { email, nombre, ultimoMessageId: null, contactoId: origenId || contactoId };
 
   document.getElementById('chat-nombre').textContent = nombre;
   document.getElementById('chat-email').textContent = email;
@@ -156,7 +154,12 @@ function cerrarChatSiFondo(ev) {
 async function cargarHiloChat() {
   const cont = document.getElementById('chat-body');
   try {
-    const r = await fetch('api/chat_mensajes.php?email=' + encodeURIComponent(chatActual.email));
+    let url = 'api/chat_mensajes.php?email=' + encodeURIComponent(chatActual.email);
+    if (chatActual.contactoId) {
+      url += '&contacto_id=' + encodeURIComponent(chatActual.contactoId);
+    }
+
+    const r = await fetch(url);
     const data = await r.json();
 
     if (data.error) {
@@ -165,20 +168,25 @@ async function cargarHiloChat() {
     }
 
     if (!data.mensajes.length) {
-      cont.innerHTML = '<div class="empty">Todavía no hay correos cruzados con este contacto.</div>';
+      cont.innerHTML = '<div class="empty">Todavía no hay mensajes con este contacto.</div>';
       return;
     }
 
     chatActual.ultimoMessageId = data.mensajes[data.mensajes.length - 1].message_id;
 
-    cont.innerHTML = data.mensajes.map(m => `
-      <div class="bubble-row ${m.direccion === 'saliente' ? 'mio' : ''}">
-        <div class="bubble">
-          <div class="bubble-text">${escapeHtml(m.cuerpo).replace(/\n/g, '<br>')}</div>
-          <div class="bubble-time">${formatFechaHora(m.fecha)}</div>
+    cont.innerHTML = data.mensajes.map(m => {
+      const esMio = m.direccion === 'saliente';
+      const esLanding = m.origen === 'landing';
+      return `
+        <div class="bubble-row ${esMio ? 'mio' : ''}">
+          <div class="bubble">
+            ${esLanding ? '<div style="font-size:10px;opacity:.6;margin-bottom:4px;">📋 Formulario de la landing</div>' : ''}
+            <div class="bubble-text">${escapeHtml(m.cuerpo).replace(/\n/g, '<br>')}</div>
+            <div class="bubble-time">${formatFechaHora(m.fecha)}</div>
+          </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
     cont.scrollTop = cont.scrollHeight;
   } catch (err) {
@@ -244,6 +252,8 @@ async function cargarClientes() {
   `).join('');
 }
 
+// ─── Utilidades ──────────────────────────────────────────────────────────────
+
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -270,7 +280,7 @@ function mostrarSeccion(seccion) {
   if (seccion === 'clientes') cargarClientes();
 }
 
-// ---------- Alta de cliente ----------
+// ─── Alta de cliente ──────────────────────────────────────────────────────────
 
 function toggleMantenimiento() {
   const activo = document.getElementById('chk-mantenimiento').checked;
@@ -290,13 +300,10 @@ function cerrarFormCliente() {
 }
 
 async function cargarContactosConvertibles() {
-  // Mostramos contactos que todavía no se convirtieron, para poder vincular el alta con el mensaje original
   const r = await fetch('api/contactos.php');
   const data = await r.json();
   const select = document.getElementById('select-contacto-origen');
-
   const disponibles = data.contactos.filter(c => c.estado !== 'convertido' && c.estado !== 'descartado');
-
   select.innerHTML = '<option value="">— ninguno / alta directa —</option>' +
     disponibles.map(c => `<option value="${c.id}">${escapeHtml(c.nombre)} · ${escapeHtml(c.email)}</option>`).join('');
 }
@@ -307,22 +314,22 @@ async function guardarCliente(ev) {
   const fd = new FormData(form);
 
   const payload = {
-    contacto_id: fd.get('contacto_id') || null,
-    nombre_negocio: fd.get('nombre_negocio'),
-    nombre_responsable: fd.get('nombre_responsable'),
-    email: fd.get('email'),
-    telefono: fd.get('telefono'),
-    direccion: fd.get('direccion'),
-    localidad: fd.get('localidad'),
-    plan_instalacion: fd.get('plan_instalacion'),
-    precio_instalacion: fd.get('precio_instalacion') || 0,
-    fecha_instalacion: fd.get('fecha_instalacion') || null,
+    contacto_id:          fd.get('contacto_id') || null,
+    nombre_negocio:       fd.get('nombre_negocio'),
+    nombre_responsable:   fd.get('nombre_responsable'),
+    email:                fd.get('email'),
+    telefono:             fd.get('telefono'),
+    direccion:            fd.get('direccion'),
+    localidad:            fd.get('localidad'),
+    plan_instalacion:     fd.get('plan_instalacion'),
+    precio_instalacion:   fd.get('precio_instalacion') || 0,
+    fecha_instalacion:    fd.get('fecha_instalacion') || null,
     mantenimiento_activo: fd.get('mantenimiento_activo') ? 1 : 0,
     precio_mantenimiento: fd.get('precio_mantenimiento') || null,
-    proximo_cobro: fd.get('proximo_cobro') || null,
-    cantidad_cajas: fd.get('cantidad_cajas') || 1,
-    ip_servidor_local: fd.get('ip_servidor_local'),
-    observaciones: fd.get('observaciones'),
+    proximo_cobro:        fd.get('proximo_cobro') || null,
+    cantidad_cajas:       fd.get('cantidad_cajas') || 1,
+    ip_servidor_local:    fd.get('ip_servidor_local'),
+    observaciones:        fd.get('observaciones'),
   };
 
   const btn = form.querySelector('button[type=submit]');
@@ -336,15 +343,12 @@ async function guardarCliente(ev) {
       body: JSON.stringify(payload)
     });
     const data = await r.json();
-
-    if (!r.ok || data.error) {
-      throw new Error(data.error || 'No se pudo guardar el cliente');
-    }
+    if (!r.ok || data.error) throw new Error(data.error || 'No se pudo guardar el cliente');
 
     cerrarFormCliente();
     await cargarClientes();
     await cargarResumen();
-    await cargarMensajes(); // por si el contacto vinculado pasó a "convertido"
+    await cargarMensajes();
   } catch (err) {
     alert('Error al guardar: ' + err.message);
   } finally {
@@ -357,5 +361,5 @@ document.addEventListener('DOMContentLoaded', () => {
   cargarResumen();
   cargarMensajes();
   cargarClientes();
-  setInterval(() => { cargarResumen(); cargarMensajes(); }, 30000); // refresco cada 30s
+  setInterval(() => { cargarResumen(); cargarMensajes(); }, 30000);
 });
