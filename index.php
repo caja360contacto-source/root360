@@ -7,13 +7,20 @@
 <meta charset="UTF-8">
 <title>Caja360 · Panel Root</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
 <div class="app">
 
+  <!-- ════ SIDEBAR ════ -->
   <aside class="sidebar">
-    <div class="brand">CAJA360<span>PANEL ROOT</span></div>
+    <div class="brand">
+      CAJA360
+      <span>PANEL ROOT</span>
+    </div>
 
     <div class="nav-item active" id="nav-inicio" onclick="mostrarSeccion('inicio')">
       Inicio
@@ -27,6 +34,7 @@
     </div>
   </aside>
 
+  <!-- ════ MAIN ════ -->
   <main class="main">
 
     <div class="topbar">
@@ -34,7 +42,7 @@
       <div class="fecha" id="fecha-hoy"></div>
     </div>
 
-    <!-- ============ SECCIÓN INICIO ============ -->
+    <!-- ══ SECCIÓN INICIO ══ -->
     <div class="seccion" id="seccion-inicio">
 
       <div class="stats-row">
@@ -99,9 +107,9 @@
           </div>
         </div>
       </div>
-    </div>
+    </div><!-- /seccion-inicio -->
 
-    <!-- ============ SECCIÓN MENSAJES ============ -->
+    <!-- ══ SECCIÓN MENSAJES ══ -->
     <div class="seccion" id="seccion-mensajes" style="display:none;">
       <div class="panel">
         <div class="panel-head">
@@ -120,13 +128,14 @@
       </div>
     </div>
 
-    <!-- ============ SECCIÓN CLIENTES ============ -->
+    <!-- ══ SECCIÓN CLIENTES ══ -->
     <div class="seccion" id="seccion-clientes" style="display:none;">
 
+      <!-- Form nuevo cliente -->
       <div class="panel" id="panel-form-cliente" style="display:none;">
         <div class="panel-head">
           <h2>Nuevo cliente</h2>
-          <button class="btn-link" onclick="cerrarFormCliente()">cancelar</button>
+          <button class="btn-link" onclick="cerrarFormCliente()">cancelar ✕</button>
         </div>
         <form id="form-cliente" class="form-grid" onsubmit="guardarCliente(event)">
 
@@ -139,27 +148,27 @@
 
           <div class="campo">
             <label>Nombre del negocio *</label>
-            <input type="text" name="nombre_negocio" required>
+            <input type="text" name="nombre_negocio" required placeholder="Ej: Supermercado El Sol">
           </div>
 
           <div class="campo">
             <label>Responsable *</label>
-            <input type="text" name="nombre_responsable" required>
+            <input type="text" name="nombre_responsable" required placeholder="Nombre completo">
           </div>
 
           <div class="campo">
             <label>Email *</label>
-            <input type="email" name="email" required>
+            <input type="email" name="email" required placeholder="contacto@negocio.com">
           </div>
 
           <div class="campo">
             <label>Teléfono</label>
-            <input type="text" name="telefono">
+            <input type="text" name="telefono" placeholder="+54 264 ...">
           </div>
 
           <div class="campo">
             <label>Localidad</label>
-            <input type="text" name="localidad">
+            <input type="text" name="localidad" placeholder="San Juan">
           </div>
 
           <div class="campo">
@@ -181,7 +190,7 @@
           </div>
 
           <div class="campo">
-            <label>Precio instalación</label>
+            <label>Precio instalación ($)</label>
             <input type="number" name="precio_instalacion" min="0" step="0.01" value="0">
           </div>
 
@@ -191,11 +200,14 @@
           </div>
 
           <div class="campo checkbox-campo">
-            <label><input type="checkbox" name="mantenimiento_activo" id="chk-mantenimiento" onchange="toggleMantenimiento()"> Tiene suscripción de mantenimiento</label>
+            <label>
+              <input type="checkbox" name="mantenimiento_activo" id="chk-mantenimiento" onchange="toggleMantenimiento()">
+              Tiene suscripción de mantenimiento
+            </label>
           </div>
 
           <div class="campo" id="campo-precio-mant" style="display:none;">
-            <label>Precio mantenimiento (mensual)</label>
+            <label>Precio mantenimiento (mensual $)</label>
             <input type="number" name="precio_mantenimiento" min="0" step="0.01">
           </div>
 
@@ -211,15 +223,15 @@
 
           <div class="campo campo-full">
             <label>Observaciones</label>
-            <textarea name="observaciones" rows="2"></textarea>
+            <textarea name="observaciones" rows="2" placeholder="Notas internas..."></textarea>
           </div>
 
           <div class="campo campo-full" style="text-align:right;">
-            <button type="submit" class="btn">Guardar cliente</button>
+            <button type="submit" class="btn">Guardar cliente →</button>
           </div>
 
         </form>
-      </div>
+      </div><!-- /panel-form-cliente -->
 
       <div class="panel">
         <div class="panel-head">
@@ -230,12 +242,12 @@
           <div class="empty">Cargando...</div>
         </div>
       </div>
-    </div>
+    </div><!-- /seccion-clientes -->
 
   </main>
-</div>
+</div><!-- /app -->
 
-<!-- ============ MODAL CHAT ============ -->
+<!-- ════ MODAL CHAT ════ -->
 <div class="chat-overlay" id="chat-overlay" onclick="cerrarChatSiFondo(event)">
   <div class="chat-modal">
     <div class="chat-header">
@@ -243,7 +255,7 @@
         <div class="chat-nombre" id="chat-nombre">—</div>
         <div class="chat-email" id="chat-email">—</div>
       </div>
-      <button class="btn-link" onclick="cerrarChat()">cerrar ✕</button>
+      <button class="btn-link" onclick="cerrarChat()" style="color:var(--muted);">cerrar ✕</button>
     </div>
     <div class="chat-body" id="chat-body">
       <div class="empty">Cargando conversación...</div>
