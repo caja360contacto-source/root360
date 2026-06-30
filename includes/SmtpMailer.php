@@ -24,14 +24,14 @@ class SmtpMailer
     {
         $this->conectar();
 
-        $this->comando("EHLO localhost", 250);
+        $this->comando("EHLO gmail.com", 250);
         $this->comando("STARTTLS", 220);
 
         if (!stream_socket_enable_crypto($this->socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
             throw new Exception("No se pudo iniciar TLS con el servidor SMTP");
         }
 
-        $this->comando("EHLO localhost", 250);
+        $this->comando("EHLO gmail.com", 250);
         $this->comando("AUTH LOGIN", 334);
         $this->comando(base64_encode($this->email), 334);
         $this->comando(base64_encode($this->password), 235);

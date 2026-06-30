@@ -46,9 +46,34 @@ function limpiarCuerpo(string $body, int $encoding): string
         $body = mb_convert_encoding($body, 'UTF-8', 'Windows-1252');
     }
     $body = mb_convert_encoding($body, 'UTF-8', 'UTF-8');
+
+    // Normalizar saltos de línea
+    $body = str_replace("\r\n", "\n", $body);
+    $body = str_replace("\r", "\n", $body);
+
+    // Cortar TODO desde donde aparece el bloque citado en adelante
+    $cortes = [
+        '/\nEl .{5,120}escribi[oó]\s*:/isu',
+        '/\nOn .{5,120}wrote\s*:/isu',
+        '/\n-+\s*Original Message\s*-+/isu',
+        '/\n-+\s*Mensaje original\s*-+/isu',
+        '/\nFrom:\s*/isu',
+        '/\nDe:\s*/isu',
+    ];
+
+    foreach ($cortes as $patron) {
+        if (preg_match($patron, $body, $m, PREG_OFFSET_CAPTURE)) {
+            $body = substr($body, 0, $m[0][1]);
+        }
+    }
+
+    // Eliminar líneas que empiezan con ">" (texto citado línea a línea)
+    $lineas = explode("\n", $body);
+    $lineas = array_filter($lineas, fn($l) => !preg_match('/^\s*>/', $l));
+    $body = implode("\n", $lineas);
+
     return trim($body);
 }
-
 function decodificarCuerpo($conn, int $num, $structure): string
 {
     if (!isset($structure->parts)) {
