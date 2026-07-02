@@ -404,6 +404,65 @@ select.estado-select:focus { outline: none; border-color: var(--accent); }
 }
 .checkbox-campo input { width: auto; accent-color: var(--accent); }
 
+.campo-con-boton {
+  display: flex;
+  gap: 8px;
+}
+.campo-con-boton input {
+  flex: 1;
+  min-width: 0;
+}
+.btn-mini {
+  flex-shrink: 0;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 14px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.btn-mini:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ──── Botones de acción en filas (editar / panel cliente) ──── */
+.fila-acciones {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s, border-color .15s, color .15s;
+  padding: 0;
+}
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.icon-btn:hover {
+  background: rgba(229, 37, 50, .12);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ══════════════════════════════════════
    CHAT MODAL
 ══════════════════════════════════════ */
@@ -554,4 +613,78 @@ select.estado-select:focus { outline: none; border-color: var(--accent); }
   .stats-row { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
   .topbar h1 { font-size: 17px; }
+}
+
+/* ══════════════════════════════════════
+   USUARIO ACTUAL (sidebar)
+══════════════════════════════════════ */
+.usuario-actual {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.usuario-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.usuario-info {
+  flex: 1;
+  min-width: 0;
+}
+.usuario-nombre {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.usuario-email {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.usuario-rol {
+  font-size: 9.5px;
+  color: var(--accent);
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-top: 2px;
+}
+
+.usuario-logout {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+  transition: background .15s, color .15s;
+}
+.usuario-logout:hover {
+  background: rgba(229, 37, 50, .15);
+  color: var(--accent);
 }
